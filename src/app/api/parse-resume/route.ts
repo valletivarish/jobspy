@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
             let pdfParse;
             try {
                 // Primary import attempt (ESM)
-                const pdfModule = await import('pdf-parse');
+                const pdfModule = await import('pdf-parse') as any;
                 pdfParse = pdfModule.default || pdfModule;
 
                 // If it's the class-based fork, handle it carefully
