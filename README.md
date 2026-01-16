@@ -1,36 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# JobSpy - AI-Powered Job Scraper
 
-## Getting Started
+A professional web application for scraping jobs from multiple platforms with AI-powered features.
 
-First, run the development server:
+![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Gemini AI](https://img.shields.io/badge/Gemini-AI-red)
+
+## Features
+
+### Job Scraping
+- **Multi-Site Support**: LinkedIn, Indeed, Glassdoor, Google Jobs, ZipRecruiter
+- **Advanced Filters**: Job type, remote/on-site, posting date, location
+- **Export Options**: Download as Excel or CSV
+
+### AI Features (Powered by Gemini)
+- **Resume Matcher**: Paste your resume, AI matches you with the best jobs
+- **Cover Letter Generator**: AI writes personalized cover letters for each job
+- **Job Analysis**: See your strengths, gaps, and tips for each position
+
+## Quick Start
+
+### Prerequisites
+- Node.js 18+
+- Python 3.10+ with `python-jobspy` installed
+
+### Installation
 
 ```bash
+# Clone the repo
+git clone https://github.com/YOUR_USERNAME/jobspy-web.git
+cd jobspy-web
+
+# Install Node dependencies
+npm install
+
+# Install Python dependencies (in parent directory venv)
+pip install python-jobspy pandas
+
+# Create environment file for Gemini API
+echo "GEMINI_API_KEY=your_api_key_here" > .env.local
+
+# Run development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### One-Click Deploy
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/jobspy-web)
 
-## Learn More
+### Manual Deploy
+1. Push code to GitHub
+2. Import project in Vercel
+3. Add environment variable: `GEMINI_API_KEY`
+4. Deploy!
 
-To learn more about Next.js, take a look at the following resources:
+## Environment Variables
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Variable | Description |
+|----------|-------------|
+| `GEMINI_API_KEY` | Your Google Gemini API key ([Get one here](https://aistudio.google.com/app/apikey)) |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+jobspy-web/
+├── src/app/
+│   ├── page.tsx          # Main UI
+│   ├── globals.css       # Netflix-style theme
+│   ├── api/
+│   │   ├── scrape/       # Job scraping endpoint
+│   │   └── ai/           # Gemini AI endpoint
+├── scripts/
+│   └── scrape.py         # Python scraping script
+├── api/
+│   └── scrape.py         # Vercel Python function
+├── .env.local            # API keys (not committed)
+└── vercel.json           # Vercel config
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Tech Stack
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Frontend**: Next.js 14, TypeScript, TailwindCSS
+- **Backend**: Next.js API Routes + Python
+- **AI**: Google Gemini 1.5 Flash
+- **Scraping**: python-jobspy
+- **Hosting**: Vercel
+
+## License
+
+MIT License

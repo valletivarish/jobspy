@@ -9,18 +9,26 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "next": "16.1.2",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.6.0",
+    "cheerio": "1.0.0-rc.12",
+    "indeed-scraper": "^3.1.4",
+    "linkedin-jobs-scraper": "^18.0.1",
+    "mammoth": "^1.11.0",
+    "next": "14.2.18",
+    "pdf-parse": "^2.4.5",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.2",
-    "tailwindcss": "^4",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10",
+    "postcss": "^8",
+    "tailwindcss": "3.4.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.18",
     "typescript": "^5"
   }
 }
