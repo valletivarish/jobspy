@@ -1,235 +1,178 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 import cheerio from 'cheerio';
+import indeed from 'indeed-scraper';
 
-const COMMON_HEADERS = {
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Cache-Control': 'max-age=0',
+// Types for our unified Job object
+interface Job {
+    title: string;
+    company: string;
+    location: string;
+    job_url: string;
+    site: string;
+    date?: string;
+}
+
+// Scraper Registry to manage different sources
+const ScraperEngine = {
+    // 1. Indeed via specialized library
+    async indeed(query: string, location: string, limit: number): Promise<Job[]> {
+        try {
+            console.log(`[Engine] Indeed Library: ${query} in ${location}`);
+            const results = await indeed.query({
+                query: query,
+                city: location,
+                limit: limit,
+            });
+            return (results || []).map(j => ({
+                title: j.title || '',
+                company: j.company || '',
+                location: j.location || '',
+                job_url: j.url || '',
+                site: 'indeed',
+                date: j.postDate
+            }));
+        } catch (e: any) {
+            console.error(`[Engine] Indeed Error: ${e.message}`);
+            return [];
+        }
+    },
+
+    // 2. Naukri via resilient scraping
+    async naukri(query: string, location: string, limit: number, hours: number = 0): Promise<Job[]> {
+        try {
+            const days = hours > 0 ? Math.ceil(hours / 24) : 0;
+            const url = `https://www.naukri.com/job-listings?keyword=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}${days ? `&dayLimit=${days}` : ''}`;
+            const { data } = await axios.get(url, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36' }
+            });
+            const $ = cheerio.load(data);
+            const jobs: Job[] = [];
+            $('.jobTuple').each((i, el) => {
+                if (jobs.length >= limit) return;
+                const title = $(el).find('.title').text().trim();
+                const company = $(el).find('.companyName').text().trim();
+                const loc = $(el).find('.location').text().trim();
+                const job_url = $(el).find('.title').attr('href') || '';
+                if (title) jobs.push({ title, company, location: loc, job_url, site: 'naukri' });
+            });
+            return jobs;
+        } catch (e: any) {
+            console.error(`[Engine] Naukri Error: ${e.message}`);
+            return [];
+        }
+    },
+
+    // 3. Adzuna (Official API - Stable for Cloud Platforms)
+    async adzuna(query: string, location: string, limit: number): Promise<Job[]> {
+        try {
+            const APP_ID = process.env.ADZUNA_APP_ID;
+            const APP_KEY = process.env.ADZUNA_APP_KEY;
+            if (!APP_ID || !APP_KEY) {
+                console.warn('[Engine] Adzuna skipped: Missing credentials');
+                return [];
+            }
+
+            const country = 'in'; // Search in India by default
+            const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/1?app_id=${APP_ID}&app_key=${APP_KEY}&results_per_page=${limit}&what=${encodeURIComponent(query)}&where=${encodeURIComponent(location)}`;
+
+            const { data } = await axios.get(url);
+            return (data.results || []).map((j: any) => ({
+                title: j.title || '',
+                company: j.company?.display_name || '',
+                location: j.location?.display_name || '',
+                job_url: j.redirect_url || '',
+                site: 'adzuna'
+            }));
+        } catch (e: any) {
+            console.error(`[Engine] Adzuna Error: ${e.message}`);
+            return [];
+        }
+    },
+
+    // 4. Google Jobs via Resilient Scrape
+    async google(query: string, location: string, limit: number): Promise<Job[]> {
+        try {
+            const url = `https://www.google.com/search?q=${encodeURIComponent(query)}+jobs+in+${encodeURIComponent(location)}&udm=8`;
+            const { data } = await axios.get(url, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36' }
+            });
+            const $ = cheerio.load(data);
+            const jobs: Job[] = [];
+            $('.LC20lb').each((i, el) => {
+                if (jobs.length >= limit) return;
+                const title = $(el).text().trim();
+                const company = $(el).parent().parent().find('.VwiC3b').text().split('·')[0]?.trim() || 'View';
+                if (title) jobs.push({ title, company, location, job_url: url, site: 'google' });
+            });
+            return jobs;
+        } catch (e: any) {
+            return [];
+        }
+    },
+
+    // 5. Jooble (Official API)
+    async jooble(query: string, location: string, limit: number): Promise<Job[]> {
+        try {
+            const API_KEY = process.env.JOOBLE_API_KEY;
+            if (!API_KEY) {
+                console.warn('[Engine] Jooble skipped: Missing API Key');
+                return [];
+            }
+            const { data } = await axios.post(`https://jooble.org/api/${API_KEY}`, {
+                keywords: query,
+                location: location,
+            });
+            return (data.jobs || []).slice(0, limit).map((j: any) => ({
+                title: j.title || '',
+                company: j.company || '',
+                location: j.location || '',
+                job_url: j.link || '',
+                site: 'jooble'
+            }));
+        } catch (e: any) {
+            console.error(`[Engine] Jooble Error: ${e.message}`);
+            return [];
+        }
+    }
 };
-
-const USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-];
-
-function getRandomUA() {
-    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
-
-// Helper to check if a job is relevant to the search term
-function isRelevant(title: string, company: string, query: string): boolean {
-    const q = query.toLowerCase();
-    const t = title.toLowerCase();
-
-    // Split query into keywords
-    const keywords = q.split(/\s+/).filter(k => k.length > 2);
-    if (keywords.length === 0) return true;
-
-    // Technical keywords list to ensure strict matching for them
-    const techKeywords = ['java', 'python', 'react', 'angular', 'node', 'javascript', 'typescript', 'aws', 'azure', 'devops', 'sql', 'cpp', 'golang', 'rust', 'flutter', 'android', 'ios'];
-    const criticalKeywords = keywords.filter(k => techKeywords.includes(k));
-
-    if (criticalKeywords.length > 0) {
-        // Must contain all critical keywords (e.g., searching for "Java React" must have both)
-        return criticalKeywords.every(k => t.includes(k));
-    }
-
-    // For non-tech queries, ensure at least one keyword (excluding common ones like "developer") is present
-    const nonGenericKeywords = keywords.filter(k => !['developer', 'engineer', 'manager', 'lead', 'senior', 'junior'].includes(k));
-    if (nonGenericKeywords.length > 0) {
-        return nonGenericKeywords.some(k => t.includes(k));
-    }
-
-    return true;
-}
-
-async function scrapeNaukri(query: string, location: string, results_wanted: number, hours_old: number = 0) {
-    let status = 'idle';
-    try {
-        const url = `https://www.naukri.com/job-listings?keyword=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}${hours_old ? `&dayLimit=${Math.ceil(hours_old / 24)}` : ''}`;
-        const { data, status: respStatus } = await axios.get(url, {
-            headers: { ...COMMON_HEADERS, 'User-Agent': getRandomUA(), 'Referer': 'https://www.naukri.com/' },
-            timeout: 10000
-        });
-        status = `success(${respStatus})`;
-        const $ = cheerio.load(data);
-        const jobs: any[] = [];
-        $('.jobTuple').each((i, el) => {
-            if (jobs.length >= results_wanted) return;
-            const title = $(el).find('.title').text().trim();
-            const company = $(el).find('.companyName').text().trim();
-            const loc = $(el).find('.location').text().trim();
-            const job_url = $(el).find('.title').attr('href') || '';
-            if (title && isRelevant(title, company, query)) {
-                jobs.push({ title, company, location: loc, job_url, site: 'naukri' });
-            }
-        });
-        return { jobs, status, count: jobs.length };
-    } catch (e: any) {
-        status = `error: ${e.response?.status || e.message}`;
-        return { jobs: [], status, count: 0 };
-    }
-}
-
-async function scrapeIndeed(query: string, location: string, results_wanted: number, hours_old: number = 0) {
-    let status = 'idle';
-    try {
-        const url = `https://www.indeed.com/jobs?q=${encodeURIComponent(query)}&l=${encodeURIComponent(location)}${hours_old ? `&fromage=${Math.ceil(hours_old / 24)}` : ''}`;
-        const { data, status: respStatus } = await axios.get(url, {
-            headers: { ...COMMON_HEADERS, 'User-Agent': getRandomUA(), 'Referer': 'https://www.indeed.com/' },
-            timeout: 10000
-        });
-        status = `success(${respStatus})`;
-        const $ = cheerio.load(data);
-        const jobs: any[] = [];
-        $('.result').each((i, el) => {
-            if (jobs.length >= results_wanted) return;
-            const title = $(el).find('.jobTitle').text().trim();
-            const company = $(el).find('.companyName').text().trim();
-            const loc = $(el).find('.companyLocation').text().trim();
-            const job_url = 'https://www.indeed.com' + $(el).find('.jcs-JobTitle').attr('href');
-            if (title && isRelevant(title, company, query)) {
-                jobs.push({ title, company, location: loc, job_url, site: 'indeed' });
-            }
-        });
-        return { jobs, status, count: jobs.length };
-    } catch (e: any) {
-        status = `error: ${e.response?.status || e.message}`;
-        return { jobs: [], status, count: 0 };
-    }
-}
-
-async function scrapeGoogle(query: string, location: string, results_wanted: number) {
-    let status = 'idle';
-    try {
-        const url = `https://www.google.com/search?q=${encodeURIComponent(query)}+jobs+in+${encodeURIComponent(location)}&udm=8`;
-        const { data, status: respStatus } = await axios.get(url, {
-            headers: { ...COMMON_HEADERS, 'User-Agent': getRandomUA(), 'Referer': 'https://www.google.com/' },
-            timeout: 10000
-        });
-        status = `success(${respStatus})`;
-        const $ = cheerio.load(data);
-        const jobs: any[] = [];
-        $('.LC20lb').each((i, el) => {
-            if (jobs.length >= results_wanted) return;
-            const title = $(el).text().trim();
-            const company = $(el).parent().parent().find('.VwiC3b').text().split('·')[0]?.trim() || 'View';
-            if (title && isRelevant(title, company, query)) {
-                jobs.push({ title, company, location, job_url: url, site: 'google' });
-            }
-        });
-        return { jobs, status, count: jobs.length };
-    } catch (e: any) {
-        status = `error: ${e.response?.status || e.message}`;
-        return { jobs: [], status, count: 0 };
-    }
-}
-
-async function scrapeMonster(query: string, location: string, results_wanted: number, hours_old: number = 0) {
-    let status = 'idle';
-    try {
-        const url = `https://www.foundit.in/srp/results?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}${hours_old ? `&freshness=${Math.ceil(hours_old / 24)}` : ''}`;
-        const { data, status: respStatus } = await axios.get(url, {
-            headers: { ...COMMON_HEADERS, 'User-Agent': getRandomUA(), 'Referer': 'https://www.foundit.in/' },
-            timeout: 10000
-        });
-        status = `success(${respStatus})`;
-        const $ = cheerio.load(data);
-        const jobs: any[] = [];
-        $('.card-container').each((i, el) => {
-            if (jobs.length >= results_wanted) return;
-            const title = $(el).find('.job-title').text().trim();
-            const company = $(el).find('.company-name').text().trim();
-            const loc = $(el).find('.location').text().trim();
-            const job_url = $(el).find('a').attr('href') || '';
-            if (title && isRelevant(title, company, query)) {
-                jobs.push({ title, company, location: loc, job_url, site: 'monster' });
-            }
-        });
-        return { jobs, status, count: jobs.length };
-    } catch (e: any) {
-        status = `error: ${e.response?.status || e.message}`;
-        return { jobs: [], status, count: 0 };
-    }
-}
-
-async function scrapeSimplyHired(query: string, location: string, results_wanted: number, hours_old: number = 0) {
-    let status = 'idle';
-    try {
-        const url = `https://www.simplyhired.com/search?q=${encodeURIComponent(query)}&l=${encodeURIComponent(location)}${hours_old ? `&t=${Math.ceil(hours_old / 24)}` : ''}`;
-        const { data, status: respStatus } = await axios.get(url, {
-            headers: { ...COMMON_HEADERS, 'User-Agent': getRandomUA(), 'Referer': 'https://www.simplyhired.com/' },
-            timeout: 10000
-        });
-        status = `success(${respStatus})`;
-        const $ = cheerio.load(data);
-        const jobs: any[] = [];
-        $('.SerpJob-jobCard').each((i, el) => {
-            if (jobs.length >= results_wanted) return;
-            const title = $(el).find('.jobTitle').text().trim();
-            const company = $(el).find('.companyName').text().trim();
-            const loc = $(el).find('.jobLocation').text().trim();
-            const job_url = 'https://www.simplyhired.com' + $(el).find('.jobTitle a').attr('href');
-            if (title && isRelevant(title, company, query)) {
-                jobs.push({ title, company, location: loc, job_url, site: 'simplyhired' });
-            }
-        });
-        return { jobs, status, count: jobs.length };
-    } catch (e: any) {
-        status = `error: ${e.response?.status || e.message}`;
-        return { jobs: [], status, count: 0 };
-    }
-}
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
         const { sites, search_term, location, results_wanted, hours_old } = body;
 
-        console.log(`[API] Searching: "${search_term}" in "${location}"`);
+        console.log(`[API] Processing search: "${search_term}" on sites:`, sites);
 
-        const sitePromises: Record<string, Promise<any>> = {};
-        if (sites.includes('naukri')) sitePromises.naukri = scrapeNaukri(search_term, location, results_wanted, hours_old);
-        if (sites.includes('indeed')) sitePromises.indeed = scrapeIndeed(search_term, location, results_wanted, hours_old);
-        if (sites.includes('google')) sitePromises.google = scrapeGoogle(search_term, location, results_wanted);
-        if (sites.includes('monster')) sitePromises.monster = scrapeMonster(search_term, location, results_wanted, hours_old);
-        if (sites.includes('simplyhired')) sitePromises.simplyhired = scrapeSimplyHired(search_term, location, results_wanted, hours_old);
+        const limitPerSite = Math.ceil(results_wanted / (sites.length || 1));
+        const promises = [];
 
-        const siteResults: Record<string, any> = {};
-        const allJobs: any[] = [];
+        if (sites.includes('indeed')) promises.push(ScraperEngine.indeed(search_term, location, limitPerSite));
+        if (sites.includes('naukri')) promises.push(ScraperEngine.naukri(search_term, location, limitPerSite, hours_old));
+        if (sites.includes('google')) promises.push(ScraperEngine.google(search_term, location, limitPerSite));
+        if (sites.includes('adzuna')) promises.push(ScraperEngine.adzuna(search_term, location, limitPerSite));
+        if (sites.includes('jooble')) promises.push(ScraperEngine.jooble(search_term, location, limitPerSite));
 
-        for (const [site, promise] of Object.entries(sitePromises)) {
-            const result = await promise;
-            siteResults[site] = { status: result.status, found: result.count };
-            allJobs.push(...result.jobs);
-        }
+        const results = await Promise.all(promises);
+        const allJobs = results.flat();
 
-        const uniqueJobs = Array.from(new Map(allJobs.map((j: any) => [`${j.title}-${j.company}`, j])).values());
+        // Advanced deduplication
+        const uniqueJobs = Array.from(new Map(allJobs.map(j => [`${j.title}-${j.company}`.toLowerCase(), j])).values());
 
-        console.log(`[API] Results: ${uniqueJobs.length} unique jobs. Site status:`, siteResults);
+        console.log(`[API] Returning ${uniqueJobs.length} unique results.`);
 
         return NextResponse.json({
             success: true,
             jobs: uniqueJobs,
-            debug: {
-                total_scraped: allJobs.length,
-                total_unique: uniqueJobs.length,
-                site_status: siteResults,
+            meta: {
+                total_found: uniqueJobs.length,
+                scraped: allJobs.length,
+                sources: sites,
                 timestamp: new Date().toISOString()
             }
         });
     } catch (error: any) {
-        console.error('[API] Fatal Error:', error);
+        console.error('[API] Fatal POST Error:', error);
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }

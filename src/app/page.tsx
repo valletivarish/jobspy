@@ -363,12 +363,23 @@ export default function Home() {
 
               <div style={{ marginBottom: 20 }}>
                 <label className="label">Platforms</label>
-                <div className="checkbox-group">
-                  {SITES.map(s => (
-                    <label key={s.id} className={`checkbox-item ${selectedSites.includes(s.id) ? 'active' : ''}`}>
-                      <input type="checkbox" checked={selectedSites.includes(s.id)} onChange={() => toggleSite(s.id)} style={{ display: 'none' }} />
-                      <span>{s.name}</span>
-                    </label>
+                <div className="flex flex-wrap gap-3">
+                  {['Indeed', 'Naukri', 'Google', 'Adzuna', 'Jooble'].map((site) => (
+                    <button
+                      key={site}
+                      onClick={() => {
+                        const s = site.toLowerCase();
+                        setSelectedSites(prev =>
+                          prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
+                        );
+                      }}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${selectedSites.includes(site.toLowerCase())
+                        ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20'
+                        }`}
+                    >
+                      {site}
+                    </button>
                   ))}
                 </div>
               </div>
