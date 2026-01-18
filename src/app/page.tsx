@@ -531,9 +531,9 @@ export default function Home() {
           <section className="section" style={{ paddingTop: 0 }}>
             <div className="actions-bar">
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div className="tab-group" style={{ height: 40, display: 'flex', alignItems: 'stretch' }}>
-                  <button onClick={() => setActiveTab('cards')} className={`tab-btn ${activeTab === 'cards' ? 'active' : ''}`} style={{ fontSize: 12, height: 40, display: 'flex', alignItems: 'center' }}>Cards</button>
-                  <button onClick={() => setActiveTab('table')} className={`tab-btn ${activeTab === 'table' ? 'active' : ''}`} style={{ fontSize: 12, height: 40, display: 'flex', alignItems: 'center' }}>Table</button>
+                <div className="tab-group">
+                  <button onClick={() => setActiveTab('cards')} className={`tab-btn ${activeTab === 'cards' ? 'active' : ''}`} style={{ fontSize: 12 }}>Cards</button>
+                  <button onClick={() => setActiveTab('table')} className={`tab-btn ${activeTab === 'table' ? 'active' : ''}`} style={{ fontSize: 12 }}>Table</button>
                 </div>
 
                 <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="select" style={{ width: 120, height: 40, fontSize: 12, color: '#fafafa', backgroundColor: '#0a0a0a' }}>
