@@ -536,14 +536,14 @@ export default function Home() {
                   <button onClick={() => setActiveTab('table')} className={`tab-btn ${activeTab === 'table' ? 'active' : ''}`} style={{ fontSize: 11 }}>Table</button>
                 </div>
 
-                <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="select" style={{ width: 110, height: 32, fontSize: 11 }}>
+                <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="select" style={{ width: 110, height: 32, fontSize: 11, color: '#fafafa', backgroundColor: '#0a0a0a' }}>
                   <option value="match">Sort: Match</option>
                   <option value="site">Sort: Source</option>
                   <option value="title">Sort: Title</option>
                   <option value="company">Sort: Company</option>
                 </select>
 
-                <select value={filterSite} onChange={e => setFilterSite(e.target.value)} className="select" style={{ width: 130, height: 32, fontSize: 11 }}>
+                <select value={filterSite} onChange={e => setFilterSite(e.target.value)} className="select" style={{ width: 130, height: 32, fontSize: 11, color: '#fafafa', backgroundColor: '#0a0a0a' }}>
                   <option value="all">Filter: All Sites</option>
                   {[...new Set((viewMode === 'saved' ? savedJobs : jobs).map(j => j.site))].map(s => (
                     <option key={s} value={s}>{s}</option>
