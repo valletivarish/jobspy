@@ -531,9 +531,9 @@ export default function Home() {
           <section className="section" style={{ paddingTop: 0 }}>
             <div className="actions-bar">
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div className="tab-group" style={{ height: 32 }}>
-                  <button onClick={() => setActiveTab('cards')} className={`tab-btn ${activeTab === 'cards' ? 'active' : ''}`} style={{ fontSize: 11 }}>Cards</button>
-                  <button onClick={() => setActiveTab('table')} className={`tab-btn ${activeTab === 'table' ? 'active' : ''}`} style={{ fontSize: 11 }}>Table</button>
+                <div className="tab-group" style={{ height: 40, display: 'flex', alignItems: 'stretch' }}>
+                  <button onClick={() => setActiveTab('cards')} className={`tab-btn ${activeTab === 'cards' ? 'active' : ''}`} style={{ fontSize: 12, height: 40, display: 'flex', alignItems: 'center' }}>Cards</button>
+                  <button onClick={() => setActiveTab('table')} className={`tab-btn ${activeTab === 'table' ? 'active' : ''}`} style={{ fontSize: 12, height: 40, display: 'flex', alignItems: 'center' }}>Table</button>
                 </div>
 
                 <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="select" style={{ width: 120, height: 40, fontSize: 12, color: '#fafafa', backgroundColor: '#0a0a0a' }}>
@@ -556,10 +556,10 @@ export default function Home() {
                   onChange={e => setFilterText(e.target.value)}
                   placeholder="Filter by title..."
                   className="input"
-                  style={{ width: 150, height: 32, fontSize: 11, padding: '0 10px' }}
+                  style={{ width: 160, height: 40, fontSize: 12, padding: '0 12px', color: '#fafafa', backgroundColor: '#0a0a0a' }}
                 />
               </div>
-              <button onClick={downloadExcel} className="btn-secondary" style={{ height: 32, fontSize: 11 }}>Export XLS</button>
+              <button onClick={downloadExcel} className="btn-secondary" style={{ height: 40, fontSize: 12 }}>Export XLS</button>
             </div>
 
             {activeTab === 'cards' ? (
