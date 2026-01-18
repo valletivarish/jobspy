@@ -405,13 +405,13 @@ export default function Home() {
                 </div>
                 <div className="form-group">
                   <label className="label">Country/Region</label>
-                  <select value={country} onChange={e => setCountry(e.target.value)} className="select">
+                  <select value={country} onChange={e => setCountry(e.target.value)} className="select" style={{ color: '#fafafa', backgroundColor: '#0a0a0a' }}>
                     {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
                   <label className="label">Job Type</label>
-                  <select value={jobType} onChange={e => setJobType(e.target.value)} className="select">
+                  <select value={jobType} onChange={e => setJobType(e.target.value)} className="select" style={{ color: '#fafafa', backgroundColor: '#0a0a0a' }}>
                     {JOB_TYPES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
@@ -420,7 +420,7 @@ export default function Home() {
               <div style={{ display: 'flex', gap: 12, margin: '16px 0' }}>
                 <div className="form-group" style={{ width: 100 }}>
                   <label className="label">Results</label>
-                  <select value={resultsWanted} onChange={e => setResultsWanted(Number(e.target.value))} className="select">
+                  <select value={resultsWanted} onChange={e => setResultsWanted(Number(e.target.value))} className="select" style={{ color: '#fafafa', backgroundColor: '#0a0a0a' }}>
                     {[10, 20, 30, 50, 100].map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
@@ -536,14 +536,14 @@ export default function Home() {
                   <button onClick={() => setActiveTab('table')} className={`tab-btn ${activeTab === 'table' ? 'active' : ''}`} style={{ fontSize: 11 }}>Table</button>
                 </div>
 
-                <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="select" style={{ width: 110, height: 32, fontSize: 11, color: '#fafafa', backgroundColor: '#0a0a0a' }}>
+                <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="select" style={{ width: 120, height: 40, fontSize: 12, color: '#fafafa', backgroundColor: '#0a0a0a' }}>
                   <option value="match">Sort: Match</option>
                   <option value="site">Sort: Source</option>
                   <option value="title">Sort: Title</option>
                   <option value="company">Sort: Company</option>
                 </select>
 
-                <select value={filterSite} onChange={e => setFilterSite(e.target.value)} className="select" style={{ width: 130, height: 32, fontSize: 11, color: '#fafafa', backgroundColor: '#0a0a0a' }}>
+                <select value={filterSite} onChange={e => setFilterSite(e.target.value)} className="select" style={{ width: 140, height: 40, fontSize: 12, color: '#fafafa', backgroundColor: '#0a0a0a' }}>
                   <option value="all">Filter: All Sites</option>
                   {[...new Set((viewMode === 'saved' ? savedJobs : jobs).map(j => j.site))].map(s => (
                     <option key={s} value={s}>{s}</option>
