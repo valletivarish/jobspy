@@ -1,13 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// Gemini models to try (in order of preference)
+const GEMINI_MODELS = [
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-8b',
+    'gemini-pro',
+];
+
+async function callGemini(prompt: string, apiKey: string): Promise<string> {
+    let lastError = '';
+
+    for (const model of GEMINI_MODELS) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    contents: [
+                        {
+                            parts: [
+                                { text: prompt }
+                            ]
+                        }
+                    ],
+                    generationConfig: {
+                        temperature: 0.7,
+                        maxOutputTokens: 2048,
+                    }
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            }
+
+            // Check if rate limited
+            if (response.status === 429) {
+                console.log(`[AI] Model ${model} rate limited, trying next...`);
+                lastError = 'Rate limited - please try again in a few seconds';
+                continue;
+            }
+
+            const error = await response.text();
+            lastError = `${response.status}: ${error.substring(0, 100)}`;
+        } catch (err: any) {
+            lastError = err.message;
+        }
+    }
+
+    throw new Error(`All Gemini models failed. ${lastError}`);
+}
+
 
 export async function POST(request: NextRequest) {
     try {
-        const { action, resume, jobs, job } = await request.json();
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+            return NextResponse.json({ success: false, error: 'Gemini API key not configured' }, { status: 500 });
+        }
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+        const { action, resume, jobs, job } = await request.json();
 
         if (action === 'match') {
             // Resume matching
@@ -22,10 +79,7 @@ ${jobs.map((j: { title: string; company: string; location: string }, i: number) 
 Return a JSON array with format: [{"index": 0, "score": 95, "reason": "brief reason"}]
 Only return the JSON, no other text. Rank top 10 jobs by match score (0-100).`;
 
-            const result = await model.generateContent(prompt);
-            const text = result.response.text();
-
-            // Extract JSON from response
+            const text = await callGemini(prompt, apiKey);
             const jsonMatch = text.match(/\[[\s\S]*\]/);
             if (jsonMatch) {
                 const matches = JSON.parse(jsonMatch[0]);
@@ -49,9 +103,7 @@ ${resume}
 
 Write a compelling, personalized cover letter (3-4 paragraphs). Be professional but not generic. Highlight relevant experience and skills. Do not use placeholder text like [Your Name] - write it as a complete letter ready to send.`;
 
-            const result = await model.generateContent(prompt);
-            const coverLetter = result.response.text();
-
+            const coverLetter = await callGemini(prompt, apiKey);
             return NextResponse.json({ success: true, coverLetter });
         }
 
@@ -76,9 +128,7 @@ Provide a brief analysis in this JSON format:
 
 Only return the JSON, no other text.`;
 
-            const result = await model.generateContent(prompt);
-            const text = result.response.text();
-
+            const text = await callGemini(prompt, apiKey);
             const jsonMatch = text.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const analysis = JSON.parse(jsonMatch[0]);
@@ -96,13 +146,11 @@ Title: ${job.title}
 Company: ${job.company}
 
 CANDIDATE:
-${resume.substring(0, 1500)} // truncate resume if too long
+${resume.substring(0, 1500)}
 
 Write a short (max 150 words) message that is personalized, mentions the candidate's fit, and expresses interest. Use a professional and confident tone.`;
 
-            const result = await model.generateContent(prompt);
-            const message = result.response.text();
-
+            const message = await callGemini(prompt, apiKey);
             return NextResponse.json({ success: true, message });
         }
 

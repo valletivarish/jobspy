@@ -14,50 +14,57 @@ export async function POST(request: NextRequest) {
         let text = '';
 
         if (fileName.endsWith('.pdf')) {
-            // Decisive fix for PDF parser initialization
-            let pdfParse;
+            // PDF parsing - use require for CommonJS module
             try {
-                // Primary import attempt (ESM)
-                const pdfModule = await import('pdf-parse') as any;
-                pdfParse = pdfModule.default || pdfModule;
-
-                // If it's the class-based fork, handle it carefully
-                if (typeof pdfParse !== 'function' && (pdfParse as any).PDFParse) {
-                    const PDFClass = (pdfParse as any).PDFParse;
-                    const parser = new PDFClass({ data: new Uint8Array(buffer) });
-                    const result = await parser.getText();
-                    text = result.text || '';
-                    if (parser.destroy) await parser.destroy();
-                } else if (typeof pdfParse === 'function') {
-                    // Standard function-based fork
-                    const data = await pdfParse(buffer);
-                    text = data.text || '';
-                } else {
-                    throw new Error('PDF parser component not found in module');
-                }
-            } catch (err: any) {
-                console.error('PDF Parser definitive error:', err);
-                throw new Error(`PDF parser initialization failed: ${err.message}`);
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                const pdfParse = require('pdf-parse');
+                const data = await pdfParse(buffer);
+                text = data.text || '';
+            } catch (pdfErr: unknown) {
+                console.error('PDF parse error:', pdfErr);
+                // Return success but prompt user to paste text
+                return NextResponse.json({
+                    success: true,
+                    text: '',
+                    fileName: file.name,
+                    fileSize: file.size,
+                    warning: 'Could not extract text from PDF. Please paste your resume text manually in the text box.'
+                });
             }
         } else if (fileName.endsWith('.docx')) {
-            const mammoth = await import('mammoth');
-            const result = await mammoth.extractRawText({ buffer });
-            text = result.value;
+            try {
+                const mammoth = await import('mammoth');
+                const result = await mammoth.extractRawText({ buffer });
+                text = result.value;
+            } catch {
+                return NextResponse.json({
+                    success: true,
+                    text: '',
+                    fileName: file.name,
+                    warning: 'Could not extract text from DOCX. Please paste your resume text manually.'
+                });
+            }
         } else if (fileName.endsWith('.doc')) {
             return NextResponse.json({
-                success: false,
-                error: 'Old .doc format not supported. Please save as .docx or .pdf'
-            }, { status: 400 });
+                success: true,
+                text: '',
+                fileName: file.name,
+                warning: 'Old .doc format not fully supported. Please paste your resume text manually or save as .docx'
+            });
         } else if (fileName.endsWith('.txt')) {
             text = buffer.toString('utf-8');
         } else {
             return NextResponse.json({
                 success: false,
-                error: 'Unsupported file format. Please upload PDF, DOCX, or TXT'
+                error: 'Unsupported file format. Please upload PDF, DOCX, TXT, or paste text directly.'
             }, { status: 400 });
         }
 
-        text = text.replace(/\s+/g, ' ').replace(/\n\s*\n/g, '\n').trim();
+        // Clean up extracted text
+        text = text
+            .replace(/\s+/g, ' ')
+            .replace(/\n\s*\n/g, '\n')
+            .trim();
 
         return NextResponse.json({
             success: true,
@@ -66,11 +73,13 @@ export async function POST(request: NextRequest) {
             fileSize: file.size
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Resume parse error:', error);
-        return NextResponse.json(
-            { success: false, error: 'Failed to parse resume: ' + String(error.message || error) },
-            { status: 500 }
-        );
+        return NextResponse.json({
+            success: true,
+            text: '',
+            warning: 'Failed to parse file. Please paste your resume text manually in the text box.',
+            error: String(error)
+        });
     }
 }

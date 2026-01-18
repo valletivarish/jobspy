@@ -1,6 +1,6 @@
 {
   "name": "jobspy-web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,11 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "axios": "^1.6.0",
     "cheerio": "1.0.0-rc.12",
-    "indeed-scraper": "^3.1.4",
-    "linkedin-jobs-scraper": "^18.0.1",
     "mammoth": "^1.11.0",
     "next": "14.2.18",
     "pdf-parse": "^2.4.5",

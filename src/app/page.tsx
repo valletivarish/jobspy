@@ -2,19 +2,37 @@
 
 import { useState, useRef, useEffect } from 'react';
 
-const SITES = [
-  { id: 'indeed', name: 'Indeed' },
-  { id: 'linkedin', name: 'LinkedIn' },
-  { id: 'glassdoor', name: 'Glassdoor' },
-  { id: 'google', name: 'Google Jobs' },
-  { id: 'naukri', name: 'Naukri' },
-  { id: 'monster', name: 'Monster' },
-  { id: 'simplyhired', name: 'SimplyHired' },
+// Feature flag for AI features (controlled via .env.local)
+const AI_ENABLED = process.env.NEXT_PUBLIC_ENABLE_AI === 'true';
+
+
+// Reliable sources - consistently work without blocking
+const RELIABLE_SITES = [
+  { id: 'remoteok', name: 'RemoteOK' },
+  { id: 'arbeitnow', name: 'Arbeitnow' },
+  { id: 'hackernews', name: 'HN Jobs' },
+  { id: 'jobspresso', name: 'Jobspresso' },
 ];
+
+// Experimental sources - may get blocked or timeout
+const EXPERIMENTAL_SITES = [
+  { id: 'himalayas', name: 'Himalayas' },
+  { id: 'remoteco', name: 'Remote.co' },
+  { id: 'startupjobs', name: 'Startup Jobs' },
+  { id: 'wellfound', name: 'Wellfound' },
+  { id: 'indeed', name: 'Indeed' },
+  { id: 'naukri', name: 'Naukri' },
+  { id: 'google', name: 'Google Jobs' },
+  { id: 'simplyhired', name: 'SimplyHired' },
+  { id: 'dice', name: 'Dice' },
+];
+
+const ALL_SITES = [...RELIABLE_SITES, ...EXPERIMENTAL_SITES];
+
 
 const COUNTRIES = [
   "India", "USA", "United Kingdom", "Canada", "Australia", "Germany",
-  "Singapore", "Netherlands", "France", "Japan"
+  "Singapore", "Netherlands", "France", "Japan", "Remote"
 ];
 
 const JOB_TYPES = [
@@ -42,19 +60,24 @@ interface Analysis {
   tips: string[];
 }
 
+interface SourceStatus {
+  count: number;
+  error?: string;
+}
+
 export default function Home() {
   const [searchTerm, setSearchTerm] = useState('software engineer');
-  const [location, setLocation] = useState('Hyderabad');
-  const [selectedSites, setSelectedSites] = useState(['indeed', 'naukri', 'google']);
-  const [country, setCountry] = useState('India');
+  const [location, setLocation] = useState('');
+  const [selectedSites, setSelectedSites] = useState(['remoteok', 'arbeitnow', 'hackernews', 'jobspresso']);
+  const [country, setCountry] = useState('Remote');
   const [jobType, setJobType] = useState('');
   const [resultsWanted, setResultsWanted] = useState(30);
-  const [freshness, setFreshness] = useState(0);
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'cards' | 'table'>('cards');
+  const [sourceStatus, setSourceStatus] = useState<Record<string, SourceStatus>>({});
 
   const [resume, setResume] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
@@ -67,8 +90,9 @@ export default function Home() {
   const [showModal, setShowModal] = useState<'cover' | 'analysis' | 'message' | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
-  const [sortBy, setSortBy] = useState<'match' | 'title' | 'company'>('match');
+  const [sortBy, setSortBy] = useState<'match' | 'title' | 'company' | 'site'>('site');
   const [filterSite, setFilterSite] = useState<string>('all');
+  const [filterText, setFilterText] = useState<string>('');
   const [recruiterMessage, setRecruiterMessage] = useState('');
   const [viewMode, setViewMode] = useState<'search' | 'saved'>('search');
 
@@ -90,10 +114,6 @@ export default function Home() {
       : [...savedJobs, job];
     setSavedJobs(updated);
     saveToLocal(updated);
-  };
-
-  const toggleSite = (id: string) => {
-    setSelectedSites(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -121,26 +141,29 @@ export default function Home() {
     setLoading(true);
     setError('');
     setCurrentPage(page);
+    setSourceStatus({});
 
     try {
+      const locationStr = location ? `${location}, ${country}` : country;
       const res = await fetch('/api/scrape-js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sites: selectedSites.filter(s => ['indeed', 'google', 'naukri', 'monster', 'simplyhired'].includes(s)),
+          sites: selectedSites,
           search_term: searchTerm,
-          location: `${location}, ${country}`,
+          location: locationStr,
           results_wanted: resultsWanted,
-          page: page,
-          hours_old: freshness,
         }),
       });
-      const jsData = await res.json();
-      if (!jsData.success) throw new Error(jsData.error);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
 
-      let allJobs = jsData.jobs || [];
-      setJobs(allJobs);
-      if (allJobs.length === 0) setError('No jobs found. Try different keywords.');
+      setJobs(data.jobs || []);
+      setSourceStatus(data.meta?.sources || {});
+
+      if (data.jobs?.length === 0) {
+        setError('No jobs found. Try different keywords or sources.');
+      }
     } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -169,8 +192,9 @@ export default function Home() {
       });
       updated.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
       setJobs(updated);
+      setSortBy('match');
     } catch (err: any) {
-      setError(err instanceof Error ? err.message : 'AI failed');
+      setError(err instanceof Error ? err.message : 'AI matching failed');
     } finally {
       setAiLoading(false);
     }
@@ -254,12 +278,37 @@ export default function Home() {
 
   const displayedJobs = (viewMode === 'saved' ? savedJobs : jobs)
     .filter(j => filterSite === 'all' || j.site === filterSite)
+    .filter(j => {
+      if (!filterText.trim()) return true;
+      const search = filterText.toLowerCase();
+      return j.title.toLowerCase().includes(search) || j.company.toLowerCase().includes(search);
+    })
     .sort((a, b) => {
       if (sortBy === 'match') return (b.matchScore || 0) - (a.matchScore || 0);
       if (sortBy === 'title') return a.title.localeCompare(b.title);
       if (sortBy === 'company') return a.company.localeCompare(b.company);
+      if (sortBy === 'site') return a.site.localeCompare(b.site);
       return 0;
     });
+
+  const getSiteBadgeColor = (site: string): string => {
+    const colors: Record<string, string> = {
+      remoteok: '#00d4aa',
+      hackernews: '#ff6600',
+      arbeitnow: '#667eea',
+      himalayas: '#6366f1',
+      remoteco: '#10b981',
+      jobspresso: '#e74c3c',
+      startupjobs: '#f59e0b',
+      wellfound: '#000000',
+      indeed: '#2557a7',
+      naukri: '#4a90d9',
+      google: '#4285f4',
+      simplyhired: '#8e44ad',
+      dice: '#eb5757',
+    };
+    return colors[site] || '#6b7280';
+  };
 
   return (
     <main>
@@ -267,50 +316,75 @@ export default function Home() {
         <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'baseline' }}>
             <span className="logo">JobSpy</span>
-            <span className="logo-sub">AI-Powered Job Search</span>
+            <span className="logo-sub">Multi-Source Job Search</span>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <div className="tab-group" style={{ height: 36 }}>
               <button onClick={() => setViewMode('search')} className={`tab-btn ${viewMode === 'search' ? 'active' : ''}`}>Search</button>
               <button onClick={() => setViewMode('saved')} className={`tab-btn ${viewMode === 'saved' ? 'active' : ''}`}>Saved ({savedJobs.length})</button>
             </div>
-            <button onClick={() => setShowAI(!showAI)} className={`btn-secondary`} style={showAI ? { background: 'var(--accent-glow)', borderColor: 'var(--accent)' } : {}}>
-              {showAI ? 'Close AI' : 'AI Assistant'}
-            </button>
+            {AI_ENABLED && (
+              <button onClick={() => setShowAI(!showAI)} className={`btn-secondary`} style={showAI ? { background: 'var(--accent-glow)', borderColor: 'var(--accent)' } : {}}>
+                {showAI ? 'Close AI' : 'AI Assistant'}
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       <div className="container">
-        {showAI && (
+        {AI_ENABLED && showAI && (
           <section className="section fade-in">
             <div className="card shadow-lg" style={{ borderColor: 'var(--accent)', background: 'var(--bg-card)' }}>
               <h2 className="section-title">AI Resume Assistant</h2>
               <p style={{ color: 'var(--text-muted)', marginBottom: 16, fontSize: 13 }}>
-                Upload your resume to unlock specialized AI tools for every job.
+                Upload your resume or paste/edit the text below for AI-powered job matching.
               </p>
 
               <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt" onChange={handleFileUpload} style={{ display: 'none' }} />
 
-              <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
-                <div onClick={() => fileInputRef.current?.click()} className={`upload-area ${resumeFileName ? 'uploaded' : ''}`} style={{ flex: 1, minHeight: 100 }}>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', marginBottom: 16 }}>
+                <div onClick={() => fileInputRef.current?.click()} className={`upload-area ${resumeFileName ? 'uploaded' : ''}`} style={{ flex: '0 0 200px', minHeight: 80, cursor: 'pointer' }}>
                   {uploadLoading ? (
                     <div className="spinner" />
                   ) : (
                     <>
-                      <div style={{ fontWeight: 600, color: resumeFileName ? 'var(--success)' : 'inherit' }}>{resumeFileName || 'Select Resume'}</div>
+                      <div style={{ fontWeight: 600, color: resumeFileName ? 'var(--success)' : 'inherit' }}>{resumeFileName || 'Upload File'}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>PDF, DOCX, TXT</div>
                     </>
                   )}
                 </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
-                  <button onClick={handleAIMatch} disabled={aiLoading || !jobs.length || !resume} className="btn-primary" style={{ width: '100%', height: 40 }}>
-                    {aiLoading ? 'Analyzing...' : 'Match All Jobs'}
-                  </button>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
-                    {jobs.length ? `${jobs.length} jobs available for analysis` : 'Search for jobs first'}
+                <div style={{ flex: 1 }}>
+                  <textarea
+                    value={resume}
+                    onChange={(e) => setResume(e.target.value)}
+                    placeholder="Paste your resume text here, or upload a file to extract text automatically..."
+                    className="input"
+                    style={{
+                      width: '100%',
+                      height: 120,
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
+                      fontSize: 13,
+                      lineHeight: 1.5
+                    }}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {resume.length > 0 ? `${resume.length} characters` : 'No resume text yet'}
                   </div>
                 </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <button onClick={handleAIMatch} disabled={aiLoading || !jobs.length || !resume} className="btn-primary" style={{ height: 40, flex: 1 }}>
+                  {aiLoading ? 'Analyzing...' : 'Match All Jobs'}
+                </button>
+                <button onClick={() => setResume('')} disabled={!resume} className="btn-secondary" style={{ height: 40 }}>
+                  Clear
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', marginTop: 8 }}>
+                {jobs.length ? `${jobs.length} jobs available for analysis` : 'Search for jobs first'}
               </div>
             </div>
           </section>
@@ -323,14 +397,14 @@ export default function Home() {
               <div className="form-grid">
                 <div className="form-group">
                   <label className="label">Keywords</label>
-                  <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input" placeholder="e.g. Java Developer" />
+                  <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input" placeholder="e.g. React Developer" />
                 </div>
                 <div className="form-group">
-                  <label className="label">Location</label>
-                  <input type="text" value={location} onChange={e => setLocation(e.target.value)} className="input" placeholder="e.g. Hyderabad" />
+                  <label className="label">City (Optional)</label>
+                  <input type="text" value={location} onChange={e => setLocation(e.target.value)} className="input" placeholder="e.g. San Francisco" />
                 </div>
                 <div className="form-group">
-                  <label className="label">Country</label>
+                  <label className="label">Country/Region</label>
                   <select value={country} onChange={e => setCountry(e.target.value)} className="select">
                     {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -350,45 +424,85 @@ export default function Home() {
                     {[10, 20, 30, 50, 100].map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
-                <div className="form-group" style={{ width: 140 }}>
-                  <label className="label">Freshness</label>
-                  <select value={freshness} onChange={e => setFreshness(Number(e.target.value))} className="select">
-                    <option value={0}>Any Time</option>
-                    <option value={24}>Last 24h</option>
-                    <option value={72}>Last 3 Days</option>
-                    <option value={168}>Last Week</option>
-                  </select>
-                </div>
               </div>
 
               <div style={{ marginBottom: 20 }}>
-                <label className="label">Platforms</label>
-                <div className="flex flex-wrap gap-3">
-                  {['Indeed', 'Naukri', 'Google', 'Adzuna', 'Jooble'].map((site) => (
+                <label className="label">Reliable Sources</label>
+                <div className="flex flex-wrap gap-3" style={{ marginBottom: 12 }}>
+                  {RELIABLE_SITES.map((site) => (
                     <button
-                      key={site}
+                      key={site.id}
                       onClick={() => {
-                        const s = site.toLowerCase();
                         setSelectedSites(prev =>
-                          prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]
+                          prev.includes(site.id) ? prev.filter(x => x !== site.id) : [...prev, site.id]
                         );
                       }}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${selectedSites.includes(site.toLowerCase())
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${selectedSites.includes(site.id)
                         ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
                         : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20'
                         }`}
+                      style={selectedSites.includes(site.id) ? { borderColor: getSiteBadgeColor(site.id), color: getSiteBadgeColor(site.id) } : {}}
                     >
-                      {site}
+                      {site.name}
                     </button>
                   ))}
+                </div>
+                <label className="label" style={{ color: 'var(--text-muted)', fontSize: 10 }}>Experimental (may be blocked)</label>
+                <div className="flex flex-wrap gap-3">
+                  {EXPERIMENTAL_SITES.map((site) => (
+                    <button
+                      key={site.id}
+                      onClick={() => {
+                        setSelectedSites(prev =>
+                          prev.includes(site.id) ? prev.filter(x => x !== site.id) : [...prev, site.id]
+                        );
+                      }}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${selectedSites.includes(site.id)
+                        ? 'bg-blue-600/10 border-blue-500/30 text-blue-400'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20'
+                        }`}
+                      style={{
+                        opacity: selectedSites.includes(site.id) ? 1 : 0.6,
+                        ...(selectedSites.includes(site.id) ? { borderColor: getSiteBadgeColor(site.id), color: getSiteBadgeColor(site.id) } : {})
+                      }}
+                    >
+                      {site.name}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                  Selected: {selectedSites.length} sources
                 </div>
               </div>
 
               <button onClick={() => handleSearch(1)} disabled={loading} className="btn-primary" style={{ height: 44, fontSize: 15 }}>
-                {loading ? <><div className="spinner" /> Searching...</> : 'Find Jobs'}
+                {loading ? <><div className="spinner" /> Scraping...</> : 'Find Jobs'}
               </button>
 
               {error && <div className="error-box">{error}</div>}
+
+              {/* Source Status - Only show summary, not wall of errors */}
+              {Object.keys(sourceStatus).length > 0 && (() => {
+                const successful = Object.entries(sourceStatus).filter(([, s]) => !s.error && s.count > 0);
+                const failed = Object.entries(sourceStatus).filter(([, s]) => s.error);
+                const totalJobs = Object.values(sourceStatus).reduce((sum, s) => sum + s.count, 0);
+
+                return (
+                  <div style={{ marginTop: 16, padding: 12, background: 'var(--bg-dark)', borderRadius: 8, fontSize: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        Found <strong style={{ color: 'var(--success)' }}>{totalJobs}</strong> jobs from{' '}
+                        <strong>{successful.length}</strong> sources
+                      </span>
+                      {failed.length > 0 && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                          {failed.length} source{failed.length > 1 ? 's' : ''} unavailable
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </section>
         )}
@@ -424,16 +538,26 @@ export default function Home() {
 
                 <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="select" style={{ width: 110, height: 32, fontSize: 11 }}>
                   <option value="match">Sort: Match</option>
+                  <option value="site">Sort: Source</option>
                   <option value="title">Sort: Title</option>
                   <option value="company">Sort: Company</option>
                 </select>
 
-                <select value={filterSite} onChange={e => setFilterSite(e.target.value)} className="select" style={{ width: 110, height: 32, fontSize: 11 }}>
-                  <option value="all">Site: All</option>
+                <select value={filterSite} onChange={e => setFilterSite(e.target.value)} className="select" style={{ width: 130, height: 32, fontSize: 11 }}>
+                  <option value="all">Filter: All Sites</option>
                   {[...new Set((viewMode === 'saved' ? savedJobs : jobs).map(j => j.site))].map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+
+                <input
+                  type="text"
+                  value={filterText}
+                  onChange={e => setFilterText(e.target.value)}
+                  placeholder="Filter by title..."
+                  className="input"
+                  style={{ width: 150, height: 32, fontSize: 11, padding: '0 10px' }}
+                />
               </div>
               <button onClick={downloadExcel} className="btn-secondary" style={{ height: 32, fontSize: 11 }}>Export XLS</button>
             </div>
@@ -441,7 +565,7 @@ export default function Home() {
             {activeTab === 'cards' ? (
               <div className="job-list">
                 {displayedJobs.map((job, i) => (
-                  <div key={i} className="job-card fade-in" style={{ animationDelay: `${i * 0.05}s` }}>
+                  <div key={i} className="job-card fade-in" style={{ animationDelay: `${i * 0.03}s` }}>
                     <div className="job-info">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span className="job-title">{job.title}</span>
@@ -458,12 +582,12 @@ export default function Home() {
                       <button onClick={() => toggleSaveJob(job)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12, borderColor: savedJobs.some(s => s.job_url === job.job_url) ? 'var(--accent)' : '' }}>
                         {savedJobs.some(s => s.job_url === job.job_url) ? 'Saved' : 'Save'}
                       </button>
-                      <span className={`badge badge-${job.site}`}>{job.site}</span>
-                      {showAI && (
+                      <span className="badge" style={{ background: getSiteBadgeColor(job.site), color: '#fff' }}>{job.site}</span>
+                      {AI_ENABLED && showAI && resume && (
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => handleCoverLetter(job)} disabled={!resume} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12, opacity: resume ? 1 : 0.4 }}>Letter</button>
-                          <button onClick={() => handleAnalyze(job)} disabled={!resume} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12, opacity: resume ? 1 : 0.4 }}>Stats</button>
-                          <button onClick={() => handleMessage(job)} disabled={!resume} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12, opacity: resume ? 1 : 0.4 }}>Message</button>
+                          <button onClick={() => handleCoverLetter(job)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>Letter</button>
+                          <button onClick={() => handleAnalyze(job)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>Stats</button>
+                          <button onClick={() => handleMessage(job)} className="btn-secondary" style={{ padding: '6px 12px', fontSize: 12 }}>Message</button>
                         </div>
                       )}
                       {job.job_url && <a href={job.job_url} target="_blank" rel="noopener noreferrer" className="apply-link">Apply</a>}
@@ -481,7 +605,7 @@ export default function Home() {
                         <td style={{ fontWeight: 500 }}>{job.title}</td>
                         <td style={{ color: 'var(--accent-light)' }}>{job.company}</td>
                         <td>{job.matchScore ? <span className={`match-score ${job.matchScore >= 80 ? 'match-high' : 'match-medium'}`}>{job.matchScore}%</span> : '-'}</td>
-                        <td><span className={`badge badge-${job.site}`}>{job.site}</span></td>
+                        <td><span className="badge" style={{ background: getSiteBadgeColor(job.site), color: '#fff' }}>{job.site}</span></td>
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button onClick={() => toggleSaveJob(job)} className="btn-secondary" style={{ padding: '4px 8px', fontSize: 10 }}>{savedJobs.some(s => s.job_url === job.job_url) ? 'Saved' : 'Save'}</button>
@@ -497,9 +621,7 @@ export default function Home() {
 
             {viewMode === 'search' && jobs.length >= 10 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginTop: 30, padding: '20px 0' }}>
-                <button onClick={() => handleSearch(currentPage - 1)} disabled={loading || currentPage === 1} className="btn-secondary" style={{ minWidth: 100 }}>Previous</button>
-                <span style={{ fontWeight: 600, color: 'var(--accent)' }}>Page {currentPage}</span>
-                <button onClick={() => handleSearch(currentPage + 1)} disabled={loading} className="btn-secondary" style={{ minWidth: 100 }}>Next</button>
+                <span style={{ fontWeight: 600, color: 'var(--accent)' }}>Showing {displayedJobs.length} jobs</span>
               </div>
             )}
           </section>
@@ -508,11 +630,12 @@ export default function Home() {
         {!loading && jobs.length === 0 && viewMode === 'search' && (
           <div className="empty-state">
             <div className="empty-title">Ready to Search</div>
-            <div className="empty-text">Configure your search and find your next opportunity</div>
+            <div className="empty-text">Select job sources and find your next opportunity</div>
           </div>
         )}
       </div>
 
+      {/* AI Modal */}
       {showModal && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
           <div className="modal-card" style={{ background: 'var(--bg-card)', borderRadius: 16, maxWidth: 600, width: '100%', maxHeight: '85vh', overflow: 'auto', padding: 32, border: '1px solid var(--border)', position: 'relative' }}>
@@ -548,7 +671,7 @@ export default function Home() {
         </div>
       )}
 
-      <footer className="footer" style={{ marginTop: 40 }}><p className="footer-text">JobSpy &copy; 2026 - Modern Job Discovery</p></footer>
+      <footer className="footer" style={{ marginTop: 40 }}><p className="footer-text">JobSpy - Multi-Source Job Search</p></footer>
     </main>
   );
 }
